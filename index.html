@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dusk Run</title>
+<style>
+:root{--bg:#1b1030;--fg:#fff4e0;--ac:#ff5d8f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1030}}
+:root[data-theme="dark"]{--bg:#1b1030}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);overflow:hidden;touch-action:none;user-select:none;font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(27,16,48,.72);text-align:center;padding:24px}
+#ov h1{margin:0;font-size:clamp(40px,10vw,84px);font-style:italic;letter-spacing:-.02em}
+#ov p{margin:0;max-width:34ch;line-height:1.5;opacity:.9}
+button{font:inherit;font-weight:700;color:#1b1030;background:var(--ac);border:0;border-radius:999px;padding:14px 32px;font-size:18px;cursor:pointer}
+button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
+.b{display:none;position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:72px;height:72px;padding:0;border-radius:50%;background:rgba(255,244,224,.22);color:var(--fg);font-size:28px}
+#L{left:16px}#R{left:100px}#B{right:16px}
+@media (pointer:coarse){.b{display:block}}
+</style></head><body>
+<canvas id="c"></canvas>
+<button class="b" id="L" aria-label="Steer left">◀</button><button class="b" id="R" aria-label="Steer right">▶</button><button class="b" id="B" aria-label="Brake">■</button>
+<div id="ov"><h1 id="t">Dusk Run</h1><p id="d">Gas is automatic. Steer with ← → or A D and brake with ↓ or S. Each lap adds 20 seconds to the clock.</p><button id="go">Start driving</button></div>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d'),ov=document.getElementById('ov');
+let W,H;const rs=()=>{W=cv.width=innerWidth;H=cv.height=innerHeight};rs();addEventListener('resize',rs);
+const SEG=200,RW=2000,DRAW=140,CD=.84,CH=1000,MAX=12000,PZ=CH*CD;
+const segs=[],ei=(a,b,p)=>a+(b-a)*(-Math.cos(p*Math.PI)/2+.5);
+function add(e,h,l,c){for(let i=0;i<e;i++)segs.push(ei(0,c,i/e));for(let i=0;i<h;i++)segs.push(c);for(let i=0;i<l;i++)segs.push(ei(c,0,i/l))}
+[[30,60,30,0],[40,60,40,3],[40,40,40,-4],[20,120,20,0],[40,80,40,6],[30,30,30,-2],[40,100,40,-6],[30,60,30,3],[40,40,40,-3],[20,100,20,0],[40,60,40,5],[40,80,40,-5]].forEach(a=>add(...a));
+const N=segs.length,L=N*SEG,cols=['#3ec6ff','#ffd23f','#7be495','#c58cff','#fff4e0'];
+let pos,speed,px,time,dist,laps,cars,run=false,keys={},bg=0,hit=0,msg='',msgT=0,best=0,steer=0;
+try{best=+localStorage.getItem('duskBest')||0}catch(e){}
+function reset(){pos=0;speed=0;px=0;time=45;dist=0;laps=0;hit=0;cars=[];
+ for(let i=0;i<28;i++)cars.push({z:20000+i*(L-30000)/28,off:(Math.random()<.5?-1:1)*(.2+Math.random()*.6),v:MAX*(.25+Math.random()*.3),c:cols[i%5]})}
+reset();
+function start(){reset();run=true;ov.style.display='none'}
+function over(){run=false;const s=Math.floor(dist/100);let nb='';if(s>best){best=s;nb=' New best!';try{localStorage.setItem('duskBest',s)}catch(e){}}
+ document.getElementById('t').textContent='Time’s up';document.getElementById('d').textContent='You drove '+s+' m over '+laps+' laps. Best: '+best+' m.'+nb;
+ document.getElementById('go').textContent='Race again';ov.style.display='flex'}
+document.getElementById('go').onclick=start;
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(['arrowleft','arrowright','arrowdown','arrowup',' '].includes(k))e.preventDefault();
+ if((k==='enter'||k===' ')&&!run){start();return}
+ if(k==='arrowleft'||k==='a')keys.l=1;if(k==='arrowright'||k==='d')keys.r=1;if(k==='arrowdown'||k==='s')keys.b=1});
+addEventListener('keyup',e=>{const k=e.key.toLowerCase();
+ if(k==='arrowleft'||k==='a')keys.l=0;if(k==='arrowright'||k==='d')keys.r=0;if(k==='arrowdown'||k==='s')keys.b=0});
+[['L','l'],['R','r'],['B','b']].forEach(([id,k])=>{const el=document.getElementById(id);
+ el.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=1});
+ ['pointerup','pointerleave','pointercancel'].forEach(t=>el.addEventListener(t,()=>keys[k]=0))});
+function update(dt){
+ const sp=speed/MAX,dx=dt*2*sp,seg=segs[Math.floor((pos+PZ)/SEG)%N];
+ steer=(keys.r?1:0)-(keys.l?1:0);px+=steer*dx;px-=dx*sp*seg*.2;
+ speed+=MAX/5*dt;if(keys.b)speed-=MAX/1.5*dt;
+ if(Math.abs(px)>1.05&&speed>MAX/4)speed-=MAX/1.2*dt;
+ px=Math.max(-2.2,Math.min(2.2,px));speed=Math.max(0,Math.min(MAX,speed));
+ pos+=speed*dt;dist+=speed*dt;bg-=seg*sp*dt*60;
+ if(pos>=L){pos-=L;laps++;time+=20;msg='Lap '+laps+' complete: +20 s';msgT=2}
+ const pz=pos+PZ;
+ for(const c of cars){c.z=(c.z+c.v*dt)%L;
+  const d=((c.z-pz)%L+L)%L,dd=d>L/2?d-L:d;
+  if(Math.abs(dd)<260&&Math.abs(px-c.off)<.28&&hit<=0){speed=Math.min(speed,c.v*.5);hit=.6;c.z=(c.z+SEG*4)%L}}
+ hit-=dt;msgT-=dt;time-=dt;if(time<=0){time=0;over()}}
+function proj(x,z){const s=CD/z;return[W/2+s*x*W/2,H/2+s*CH*H/2,s*RW*W/2,s]}
+function poly(c,a,b,c2,d){g.fillStyle=c;g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.lineTo(c2[0],c2[1]);g.lineTo(d[0],d[1]);g.fill()}
+function car(cx,y,w,col,brake,tilt){const h=w*.5;g.save();g.translate(cx,y);g.rotate(tilt||0);
+ g.fillStyle='rgba(0,0,0,.35)';g.fillRect(-w*.55,-h*.08,w*1.1,h*.12);
+ g.fillStyle='#14091f';g.fillRect(-w*.5,-h*.3,w*.2,h*.3);g.fillRect(w*.3,-h*.3,w*.2,h*.3);
+ g.fillStyle=col;g.fillRect(-w*.5,-h*.75,w,h*.5);
+ g.fillRect(-w*.34,-h*1.05,w*.68,h*.35);
+ g.fillStyle='#1b1030';g.fillRect(-w*.28,-h*1.0,w*.56,h*.24);
+ g.fillStyle=brake?'#ff2a4d':'#a3203a';g.fillRect(-w*.46,-h*.62,w*.2,h*.14);g.fillRect(w*.26,-h*.62,w*.2,h*.14);g.restore()}
+function draw(){
+ const gr=g.createLinearGradient(0,0,0,H/2);gr.addColorStop(0,'#2a0f4d');gr.addColorStop(.6,'#c2306b');gr.addColorStop(1,'#ff9a4d');
+ g.fillStyle=gr;g.fillRect(0,0,W,H/2+2);
+ const sr=Math.min(W,H)*.14;g.fillStyle='#ffd27a';g.beginPath();g.arc(W/2,H/2-sr*.35,sr,0,7);g.fill();
+ g.fillStyle='#3a1560';g.beginPath();g.moveTo(0,H/2);
+ for(let x=0;x<=W+20;x+=20){const u=x+bg;g.lineTo(x,H/2-(H*.05+H*.04*Math.sin(u*.008)+H*.025*Math.sin(u*.021)))}
+ g.lineTo(W,H/2);g.fill();
+ g.fillStyle='#1f6b5a';g.fillRect(0,H/2,W,H/2);
+ const bi=Math.floor(pos/SEG),pct=(pos%SEG)/SEG;let x=0,dx=-segs[bi%N]*pct;const P=[];
+ for(let n=0;n<DRAW;n++){const i=(bi+n)%N,s=segs[i],looped=bi+n>=N,zb=i*SEG-pos+(looped&&i<bi?L:0);
+  const z1=(bi+n)*SEG-pos,z2=z1+SEG,cx=px*RW;
+  P.push({i,z1,a:proj(-cx+x,Math.max(z1,.01)),b:proj(-cx+x+dx,z2)});x+=dx;dx+=s}
+ const byIdx={};for(const c of cars){const k=Math.floor(c.z/SEG);(byIdx[k]=byIdx[k]||[]).push(c)}
+ for(let n=DRAW-1;n>=0;n--){const p=P[n];if(p.z1<=CD)continue;const a=p.a,b=p.b,band=Math.floor((bi+n)/3)%2;
+  g.fillStyle=band?'#1f6b5a':'#195a4c';g.fillRect(0,b[1],W,a[1]-b[1]+1);
+  poly(band?'#ff5d8f':'#fff4e0',[a[0]-a[2]*1.14,a[1]],[a[0]+a[2]*1.14,a[1]],[b[0]+b[2]*1.14,b[1]],[b[0]-b[2]*1.14,b[1]]);
+  poly(band?'#3a3a52':'#34344c',[a[0]-a[2],a[1]],[a[0]+a[2],a[1]],[b[0]+b[2],b[1]],[b[0]-b[2],b[1]]);
+  if(band)poly('#fff4e0',[a[0]-a[2]*.02,a[1]],[a[0]+a[2]*.02,a[1]],[b[0]+b[2]*.02,b[1]],[b[0]-b[2]*.02,b[1]]);
+  if((bi+n)%12===0)for(const sd of[-1.35,1.35]){const w=a[2]*.05,h=a[2]*.45;g.fillStyle='#ffd27a';g.fillRect(a[0]+sd*a[2]-w/2,a[1]-h,w,h)}
+  const cs=byIdx[(bi+n)%N];if(cs)for(const c of cs){const t=(c.z%SEG)/SEG,cx=a[0]+(b[0]-a[0])*t,cy=a[1]+(b[1]-a[1])*t,w=a[2]+(b[2]-a[2])*t;
+   car(cx+w*c.off,cy,w*.3,c.c,false)}}
+ const pw=Math.min(W*.24,H*.3);g.save();if(hit>0)g.translate((Math.random()-.5)*8,(Math.random()-.5)*8);
+ car(W/2,H*.93,pw,'#ff5d8f',keys.b,steer*.04);g.restore();
+ if(hit>0){g.fillStyle='rgba(255,60,80,'+hit*.4+')';g.fillRect(0,0,W,H)}
+ g.fillStyle='#fff4e0';g.font='bold '+Math.max(16,H*.032)+'px "Trebuchet MS",system-ui,sans-serif';g.textBaseline='top';
+ const m=Math.max(16,W*.03),mt=m+14;g.textAlign='left';g.fillText(Math.round(speed/MAX*220)+' km/h',m,mt);
+ g.textAlign='right';g.fillText(Math.ceil(time)+' s',W-m,mt);g.textAlign='center';g.fillText(Math.floor(dist/100)+' m',W/2,mt);
+ if(msgT>0)g.fillText(msg,W/2,mt+H*.06)}
+let last=performance.now();
+function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(run)update(dt);draw();requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>
